@@ -60,6 +60,14 @@ RUN --mount=from=download,source=/usr/bin/rdfind,target=/usr/bin/rdfind \
 RUN mkdir -p $(winepath -u $WINEPATH)
 RUN --mount=from=download,source=/tmp/uv.exe,target=/home/wine/.wine/drive_c/users/wine/.local/bin/uv.exe \
     wine uv python install 3.12
+
+# FIX: Create a symlink cpython-3.12-windows-x86_64-none -> cpython-3.12.13-windows-x86_64-none,
+# because junctions are not supported in Wine on older kernels like CentOS7 3.10 kernel.
+# Otherwise ~/.wine/drive_c/users/wine/.local/bin/python3.12.exe won't start.
+RUN PYTHON=$(find "$HOME/.wine/drive_c/users/wine/AppData/Roaming/uv/python" -maxdepth 2 -not -type l -name "python.exe" | head -n 1 | xargs dirname) && \
+    PYTHON_MAJMIN=$(echo $PYTHON | sed 's/\([0-9]*\.[0-9]*\)\.[0-9]*/\1/') && \
+    ln -s $PYTHON $PYTHON_MAJMIN
+
 # COPY --from=download --chown=wine:wine /tmp/uv.exe /home/wine/.wine/drive_c/users/wine/.local/bin/uv.exe
 
 # CMD ["wine", "cmd"]
