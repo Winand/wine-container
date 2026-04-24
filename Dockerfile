@@ -35,7 +35,8 @@ FROM debian:trixie-slim
 # libgnutls30 for "failed to load libgnutls, no support for pfx import/export"
 RUN dpkg --add-architecture i386 && apt update && \
     apt install -y --no-install-recommends \
-        libc6:i386 libfreetype6 libfreetype6:i386 libxrender1 libxext6 libgl1 libegl1  && \
+        libc6:i386 libfreetype6 libfreetype6:i386 libgnutls30 \
+        libxrender1 libxext6 libgl1 libegl1  && \
     rm -rf /var/lib/apt/lists/*
 
 # COPY --from=download /usr/lib/locale/locale-archive /usr/lib/locale/locale-archive
