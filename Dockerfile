@@ -58,10 +58,11 @@ RUN --mount=from=download,source=/usr/bin/rdfind,target=/usr/bin/rdfind \
     rdfind -makehardlinks true -makeresultsfile false $HOME/.local $HOME/.wine
 
 RUN mkdir -p $(winepath -u $WINEPATH)
+# Astral.sh may not be available so download Python from GitHub directly
 RUN --mount=from=download,source=/tmp/uv.exe,target=/home/wine/.wine/drive_c/users/wine/.local/bin/uv.exe \
-    wine uv python install 3.12
+    wine uv python install -v --mirror https://github.com/astral-sh/python-build-standalone/releases/download 3.12
 
-# FIX: Create a symlink cpython-3.12-windows-x86_64-none -> cpython-3.12.13-windows-x86_64-none,
+# Fixed: Create a symlink cpython-3.12-windows-x86_64-none -> cpython-3.12.13-windows-x86_64-none,
 # because junctions are not supported in Wine on older kernels like CentOS7 3.10 kernel.
 # Otherwise ~/.wine/drive_c/users/wine/.local/bin/python3.12.exe won't start.
 RUN PYTHON=$(find "$HOME/.wine/drive_c/users/wine/AppData/Roaming/uv/python" -maxdepth 2 -not -type l -name "python.exe" | head -n 1 | xargs dirname) && \
