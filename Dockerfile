@@ -1,6 +1,6 @@
-ARG WINE_VERSION="11.7"
+ARG WINE_VERSION="11.8"
 ARG WINE_VARIANT="staging-tkg-amd64" # amd64, staging-amd64
-ARG UV_VERSION="0.11.7"
+ARG UV_VERSION="0.11.8"
 
 
 FROM debian:trixie-slim AS download
