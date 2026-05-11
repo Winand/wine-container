@@ -4,9 +4,6 @@ ARG UV_VERSION="0.11.13"
 
 
 FROM debian:trixie-slim AS download
-ARG WINE_VERSION
-ARG WINE_VARIANT
-ARG UV_VERSION
 # RUN sed -i 's/deb.debian.org/mirror.yandex.ru/g' /etc/apt/sources.list.d/debian.sources
 
 RUN apt update && \
@@ -19,15 +16,16 @@ RUN apt update && \
 #
 # Test for integer number: https://stackoverflow.com/a/19116862
 # NOTE: wget 1.25 passes Authorization header to redirects too, so max-redirect=0 is used
+ARG WINE_VERSION
+ARG WINE_VARIANT
 RUN --mount=type=secret,id=GH_TOKEN \
     mkdir -p /opt/wine && \
-    if [ ${WINE_VERSION} -eq ${WINE_VERSION} ]; then \
+    if [ ${WINE_VERSION} -eq ${WINE_VERSION} ] 2>/dev/null; then \
         GH_TOKEN=$(cat /run/secrets/GH_TOKEN); \
-        ARTIFACT_URL=$(wget -q -O- "https://api.github.com/repos/Kron4ek/Wine-Builds/actions/runs/${WINE_VERSION}" \
-                       | jq -r .artifacts_url | wget -q -i- -O- | jq -r '.artifacts[0] | .archive_download_url'); \
-        wget --max-redirect=0 --header="Authorization: Bearer ${GH_TOKEN}" "$ARTIFACT_URL" 2>&1 \
-            | grep -i "Location:" | awk '{print $2}' | wget -i- -O /tmp/wine.zip; \
-        echo $(ls -l /tmp); \
+        wget -q -O- "https://api.github.com/repos/Kron4ek/Wine-Builds/actions/runs/${WINE_VERSION}" \
+            | jq -r .artifacts_url | wget -q -i- -O- | jq -r '.artifacts[0] | .archive_download_url' \
+            | wget -i- --max-redirect=0 --header="Authorization: Bearer ${GH_TOKEN}" 2>&1 \
+            | grep "Location:" | awk '{print $2}' | wget -i- -O /tmp/wine.zip; \
         unzip -l /tmp/wine.zip | grep -P "wine-git-\w+-${WINE_VARIANT}.tar.xz" | awk '{print $4}' \
             | xargs unzip -p /tmp/wine.zip | tar -xJ -C /opt/wine --strip-components=1; \
         rm /tmp/wine.zip; \
@@ -38,6 +36,7 @@ RUN --mount=type=secret,id=GH_TOKEN \
     find /opt/wine/lib/wine -name "*.a" -delete && \
     rm -rf /opt/wine/include
 
+ARG UV_VERSION
 RUN wget -q -O /tmp/uv.zip https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-pc-windows-msvc.zip && \
     unzip -j /tmp/uv.zip uv.exe -d /tmp && \
     rm /tmp/uv.zip
