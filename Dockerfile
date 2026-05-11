@@ -1,6 +1,6 @@
 ARG WINE_VERSION="11.8"
 ARG WINE_VARIANT="staging-tkg-amd64" # amd64, staging-amd64
-ARG UV_VERSION="0.11.8"
+ARG UV_VERSION="0.11.13"
 
 
 FROM debian:trixie-slim AS download
@@ -10,12 +10,31 @@ ARG UV_VERSION
 # RUN sed -i 's/deb.debian.org/mirror.yandex.ru/g' /etc/apt/sources.list.d/debian.sources
 
 RUN apt update && \
-    apt install -y --no-install-recommends ca-certificates wget unzip xz-utils rdfind locales && \
+    apt install -y --no-install-recommends ca-certificates wget unzip xz-utils rdfind locales jq && \
     rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /opt/wine && \
-    wget -q -O- https://github.com/Kron4ek/Wine-Builds/releases/download/${WINE_VERSION}/wine-${WINE_VERSION}-${WINE_VARIANT}.tar.xz \
-    | tar -xJ -C /opt/wine/ --strip-components=1 && \
+# Create GitHub token on page https://github.com/settings/personal-access-tokens
+# Put token into secrets `docker pass set GH_TOKEN=github_pat_***`
+# Load token in an env var `$env:GH_TOKEN=$(uvx keyring get com.docker.pass.shared:docker-pass-cli:GH_TOKEN GH_TOKEN)`
+#
+# Test for integer number: https://stackoverflow.com/a/19116862
+# NOTE: wget 1.25 passes Authorization header to redirects too, so max-redirect=0 is used
+RUN --mount=type=secret,id=GH_TOKEN \
+    mkdir -p /opt/wine && \
+    if [ ${WINE_VERSION} -eq ${WINE_VERSION} ]; then \
+        GH_TOKEN=$(cat /run/secrets/GH_TOKEN); \
+        ARTIFACT_URL=$(wget -q -O- "https://api.github.com/repos/Kron4ek/Wine-Builds/actions/runs/${WINE_VERSION}" \
+                       | jq -r .artifacts_url | wget -q -i- -O- | jq -r '.artifacts[0] | .archive_download_url'); \
+        wget --max-redirect=0 --header="Authorization: Bearer ${GH_TOKEN}" "$ARTIFACT_URL" 2>&1 \
+            | grep -i "Location:" | awk '{print $2}' | wget -i- -O /tmp/wine.zip; \
+        echo $(ls -l /tmp); \
+        unzip -l /tmp/wine.zip | grep -P "wine-git-\w+-${WINE_VARIANT}.tar.xz" | awk '{print $4}' \
+            | xargs unzip -p /tmp/wine.zip | tar -xJ -C /opt/wine --strip-components=1; \
+        rm /tmp/wine.zip; \
+    else \
+        wget -q -O- https://github.com/Kron4ek/Wine-Builds/releases/download/${WINE_VERSION}/wine-${WINE_VERSION}-${WINE_VARIANT}.tar.xz \
+        | tar -xJ -C /opt/wine/ --strip-components=1; \
+    fi && \
     find /opt/wine/lib/wine -name "*.a" -delete && \
     rm -rf /opt/wine/include
 
