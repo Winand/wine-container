@@ -7,37 +7,38 @@ FROM debian:trixie-slim AS download
 # RUN sed -i 's/deb.debian.org/mirror.yandex.ru/g' /etc/apt/sources.list.d/debian.sources
 
 RUN apt update && \
-    apt install -y --no-install-recommends ca-certificates wget unzip xz-utils rdfind locales jq && \
+    apt install -y --no-install-recommends ca-certificates curl unzip xz-utils rdfind locales jq && \
     rm -rf /var/lib/apt/lists/*
 
 # Create GitHub token on page https://github.com/settings/personal-access-tokens
 # Put token into secrets `docker pass set GH_TOKEN=github_pat_***`
-# Load token in an env var `$env:GH_TOKEN=$(uvx keyring get com.docker.pass.shared:docker-pass-cli:GH_TOKEN GH_TOKEN)`
+# Load token in an env var:
+# $env:GH_TOKEN = $(uvx keyring get com.docker.pass.shared:docker-pass-cli:GH_TOKEN GH_TOKEN
+#                       || uvx keyring get com.docker.pass:docker-pass-cli:GH_TOKEN GH_TOKEN)
 #
 # Test for integer number: https://stackoverflow.com/a/19116862
-# NOTE: wget 1.25 passes Authorization header to redirects too, so max-redirect=0 is used
+# NOTE: curl is used because it supports SOCKS5 proxies and because wget (v1.25) passes Authorization header to redirects
 ARG WINE_VERSION
 ARG WINE_VARIANT
 RUN --mount=type=secret,id=GH_TOKEN \
     mkdir -p /opt/wine && \
     if [ ${WINE_VERSION} -eq ${WINE_VERSION} ] 2>/dev/null; then \
         GH_TOKEN=$(cat /run/secrets/GH_TOKEN); \
-        wget -q -O- "https://api.github.com/repos/Kron4ek/Wine-Builds/actions/runs/${WINE_VERSION}" \
-            | jq -r .artifacts_url | wget -q -i- -O- | jq -r '.artifacts[0] | .archive_download_url' \
-            | wget -i- --max-redirect=0 --header="Authorization: Bearer ${GH_TOKEN}" 2>&1 \
-            | grep "Location:" | awk '{print $2}' | wget -i- -O /tmp/wine.zip; \
+        curl -s "https://api.github.com/repos/Kron4ek/Wine-Builds/actions/runs/${WINE_VERSION}" \
+        | jq -r .artifacts_url | xargs curl -s | jq -r '.artifacts[0].archive_download_url' \
+        | xargs curl -L -H "Authorization: Bearer ${GH_TOKEN}" -o /tmp/wine.zip; \
         unzip -l /tmp/wine.zip | grep -P "wine-git-\w+-${WINE_VARIANT}.tar.xz" | awk '{print $4}' \
-            | xargs unzip -p /tmp/wine.zip | tar -xJ -C /opt/wine --strip-components=1; \
+        | xargs unzip -p /tmp/wine.zip | tar -xJ -C /opt/wine --strip-components=1; \
         rm /tmp/wine.zip; \
     else \
-        wget -q -O- https://github.com/Kron4ek/Wine-Builds/releases/download/${WINE_VERSION}/wine-${WINE_VERSION}-${WINE_VARIANT}.tar.xz \
+        curl -Ls https://github.com/Kron4ek/Wine-Builds/releases/download/${WINE_VERSION}/wine-${WINE_VERSION}-${WINE_VARIANT}.tar.xz \
         | tar -xJ -C /opt/wine/ --strip-components=1; \
     fi && \
     find /opt/wine/lib/wine -name "*.a" -delete && \
     rm -rf /opt/wine/include
 
 ARG UV_VERSION
-RUN wget -q -O /tmp/uv.zip https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-pc-windows-msvc.zip && \
+RUN curl -Ls -o /tmp/uv.zip https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-pc-windows-msvc.zip && \
     unzip -j /tmp/uv.zip uv.exe -d /tmp && \
     rm /tmp/uv.zip
 
@@ -80,12 +81,13 @@ RUN mkdir -p $(winepath -u $WINEPATH)
 RUN --mount=from=download,source=/tmp/uv.exe,target=/home/wine/.wine/drive_c/users/wine/.local/bin/uv.exe \
     wine uv python install -v --mirror https://github.com/astral-sh/python-build-standalone/releases/download 3.12
 
-# Fixed: Create a symlink cpython-3.12-windows-x86_64-none -> cpython-3.12.13-windows-x86_64-none,
-# because junctions are not supported in Wine on older kernels like CentOS7 3.10 kernel.
+# Fixed in uv 0.11.9 https://github.com/astral-sh/uv/pull/19213
+# Create a symlink cpython-3.12-windows-x86_64-none -> cpython-3.12.13-windows-x86_64-none,
+# because junctions are supported in Wine presumably on WSL kernel only.
 # Otherwise ~/.wine/drive_c/users/wine/.local/bin/python3.12.exe won't start.
-RUN PYTHON=$(find "$HOME/.wine/drive_c/users/wine/AppData/Roaming/uv/python" -maxdepth 2 -not -type l -name "python.exe" | head -n 1 | xargs dirname) && \
-    PYTHON_MAJMIN=$(echo $PYTHON | sed 's/\([0-9]*\.[0-9]*\)\.[0-9]*/\1/') && \
-    ln -s $PYTHON $PYTHON_MAJMIN
+# RUN PYTHON=$(find "$HOME/.wine/drive_c/users/wine/AppData/Roaming/uv/python" -maxdepth 2 -not -type l -name "python.exe" | head -n 1 | xargs dirname) && \
+#     PYTHON_MAJMIN=$(echo $PYTHON | sed 's/\([0-9]*\.[0-9]*\)\.[0-9]*/\1/') && \
+#     ln -s $PYTHON $PYTHON_MAJMIN
 
 # COPY --from=download --chown=wine:wine /tmp/uv.exe /home/wine/.wine/drive_c/users/wine/.local/bin/uv.exe
 
